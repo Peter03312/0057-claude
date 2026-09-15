@@ -1,0 +1,31 @@
+services:
+  api:
+    build: .
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      DATABASE_PATH: /data/story.db
+    volumes:
+      - story-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # 一次性校验：跑完测试套件 + 生产 HTTP 冒烟后退出，只有 api 保持运行
+  verify:
+    build: .
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://api:8000
+      DATABASE_PATH: /tmp/verify-story.db
+    command: ["sh", "-c", "python -m pytest tests -q && python scripts/smoke.py"]
+    restart: "no"
+
+volumes:
+  story-data:

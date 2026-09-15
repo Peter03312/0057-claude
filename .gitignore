@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# 本地运行的 SQLite 数据
+*.db
+*.db-wal
+*.db-shm
+/data/
+
+.idea/
+.vscode/
