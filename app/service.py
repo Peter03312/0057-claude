@@ -293,6 +293,16 @@ def submit_round(store: Store, session_id: str, round_no: int,
         s = _load_session(conn, session_id)
         rounds = _rounds(conn, session_id)
         r = _load_round(conn, session_id, round_no)
+        # 先验授权：令牌一旦作废（撤回 / 转交 / 完成），携带它的任何提交
+        # 一律拒绝，不得进入幂等层——旧令牌不存在"复用原结果"的窗口
+        if s["phase"] == Phase.COMPLETED.value:
+            raise ApiError(
+                409, "SESSION_COMPLETED", "故事已完成并冻结，不能再交稿",
+                round_no=round_no, author=r["author"],
+                next_step=f"GET /sessions/{session_id}/story 查看成稿",
+            )
+        _token_or_401(r["token"], token, s, r, rounds)
+        # 令牌有效才查幂等：同键同文复用原结果，同键异文冲突
         existing = conn.execute(
             "SELECT * FROM idempotency_keys WHERE session_id = ? AND round_no = ? AND key = ?",
             (session_id, round_no, idem_key),
@@ -308,13 +318,6 @@ def submit_round(store: Store, session_id: str, round_no: int,
                 round_no=round_no, author=r["author"],
                 next_step="换一个新的 Idempotency-Key，或改回与首次提交完全相同的内容",
             )
-        if s["phase"] == Phase.COMPLETED.value:
-            raise ApiError(
-                409, "SESSION_COMPLETED", "故事已完成并冻结，不能再交稿",
-                round_no=round_no, author=r["author"],
-                next_step=f"GET /sessions/{session_id}/story 查看成稿",
-            )
-        _token_or_401(r["token"], token, s, r, rounds)
         phase = Phase(s["phase"])
         if phase != Phase.CLAIMED or s["current_round"] != round_no:
             if phase == Phase.SUBMITTED and s["current_round"] == round_no:

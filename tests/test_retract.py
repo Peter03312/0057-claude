@@ -46,9 +46,20 @@ def test_late_retract_and_stale_token_after_handoff_rejected(client):
     assert err["author"] == "小明"
     assert err["next_step"]
 
-    # 旧令牌提交被拒
+    # 旧令牌提交被拒（新键）
     resp = client.post(f"/sessions/{sid}/rounds/1/submit", json={"text": "迟到稿。"},
                        headers={"Authorization": f"Bearer {token1}", "Idempotency-Key": "k9"})
+    assert resp.status_code == 401
+
+    # 旧令牌 + 原幂等键 + 原内容：同样必须被拒，不得复用原结果
+    resp = client.post(f"/sessions/{sid}/rounds/1/submit", json={"text": "第一段定稿。"},
+                       headers={"Authorization": f"Bearer {token1}", "Idempotency-Key": "k1"})
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "TOKEN_INVALID"
+
+    # 旧令牌 + 原幂等键 + 不同内容：也是 401，而不是幂等冲突
+    resp = client.post(f"/sessions/{sid}/rounds/1/submit", json={"text": "被换掉的内容。"},
+                       headers={"Authorization": f"Bearer {token1}", "Idempotency-Key": "k1"})
     assert resp.status_code == 401
 
     # 轮次未被推进也未回退：仍在第 2 轮 claimed

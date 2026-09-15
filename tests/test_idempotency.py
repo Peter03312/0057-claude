@@ -65,14 +65,16 @@ def test_missing_idempotency_key_rejected(client):
     assert resp.json()["error"]["code"] == "IDEMPOTENCY_KEY_REQUIRED"
 
 
-def test_replay_after_completion_still_returns_original(client):
+def test_submit_after_completion_rejected_even_with_original_key(client):
     sid = create_session(client, rounds=[{"author": "小明", "visible_tail": 1}])
     token = claim(client, sid, 1, "小明")
     submit(client, sid, 1, token, "key-1", "唯一的一段。")
     client.post(f"/sessions/{sid}/complete")
 
-    replay = submit(client, sid, 1, token, "key-1", "唯一的一段。")
-    assert replay["idempotency"] == "replayed"
-    # 复用原结果，不改变冻结状态
+    # 令牌已随完成作废：即使键与内容都与首次一致，也必须拒绝而非复用原结果
+    resp = client.post(f"/sessions/{sid}/rounds/1/submit", json={"text": "唯一的一段。"},
+                       headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "key-1"})
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "SESSION_COMPLETED"
     status = client.get(f"/sessions/{sid}").json()
     assert status["phase"] == "completed"

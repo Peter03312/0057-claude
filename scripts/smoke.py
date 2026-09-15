@@ -92,8 +92,9 @@ def main() -> None:
     auth1 = {"Authorization": f"Bearer {resp.json()['token']}"}
     resp = client.get(f"/sessions/{sid}/rounds/1/tail", headers=auth1)
     check(resp.status_code == 200, "重新领取后应能再读末句")
+    key1b = new_key()
     resp = client.post(f"/sessions/{sid}/rounds/1/submit", json={"text": seg1},
-                       headers={**auth1, "Idempotency-Key": new_key()})
+                       headers={**auth1, "Idempotency-Key": key1b})
     check(resp.status_code == 200, f"重新交稿失败: {resp.text}")
 
     # 第 2 轮：转交后第 1 轮的迟到撤回必须被拒，且轮次不后退
@@ -102,6 +103,10 @@ def main() -> None:
     auth2 = {"Authorization": f"Bearer {resp.json()['token']}"}
     resp = client.post(f"/sessions/{sid}/rounds/1/retract", headers=auth1)
     check(resp.status_code == 401, "转交后迟到撤回应被拒绝")
+    # 旧令牌 + 原幂等键 + 原内容：转交后必须被拒，不得复用原结果
+    resp = client.post(f"/sessions/{sid}/rounds/1/submit", json={"text": seg1},
+                       headers={**auth1, "Idempotency-Key": key1b})
+    check(resp.status_code == 401, "转交后旧令牌交稿（含幂等重放）应被拒绝")
     status = client.get(f"/sessions/{sid}").json()
     check(status["current_round"] == 2 and status["phase"] == "claimed",
           "迟到操作不应推进或回退轮次")
